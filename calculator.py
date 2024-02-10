@@ -32,43 +32,46 @@ vestingYears = int(vestingPeriod**-1)
 def calculateIncome():
     salary = np.ones(simLength) * baseSalary
     stock = np.zeros((simLength, simLength))
-    stockHeld = np.zeros((simLength, simLength))
+    stockHeld = np.zeros((simLength))
+    stockSold = np.zeros((simLength))
 
     for i in range(simLength):
 
         if i==0:
-            stock[i][i:i+vestingYears] = initialStockGrant*vestingPeriod * targetStockLiquidation #instantly selling the stock
-            stockHeld[i][i:i+vestingYears] = initialStockGrant*vestingPeriod * (1-targetStockLiquidation) #amount saved before appreciation
+            stock[i][i:i+vestingYears] = initialStockGrant*vestingPeriod
         else:
             salary[i] = salary[i-1]*yearlyRaise
-            stock[i][i:i+vestingYears] = (salary[i-1]*refresherCoeff)*vestingPeriod * targetStockLiquidation
-            stockHeld[i][i:i+vestingYears] = (salary[i-1]*refresherCoeff)*vestingPeriod * (1-targetStockLiquidation)
+            stock[i][i:i+vestingYears] = (salary[i-1]*refresherCoeff)*vestingPeriod
 
         for k in range(vestingYears):
             if(i+k<simLength):
                 stock[i][i+k] = stock[i][i+k] * stockAppreciation ** k
 
-        for j in range(simLength):
-            if j > 1:
-                stockHeld[i][j] = stockHeld[i][j-1] * stockAppreciation ** j + stockHeld[i][j] #the appreciation of the prior stock plus the stock of whatever we are on now
+    totalVesting = np.sum(stock, axis=0)
+    newHeldStock = totalVesting * (1-targetStockLiquidation)
+    stockSold = totalVesting * targetStockLiquidation
+
+    for j in range(simLength):
+        if j >= 1:
+            stockHeld[j] = newHeldStock[j] + stockHeld[j-1]*stockAppreciation
+        else:
+            stockHeld[j] = newHeldStock[j]
 
     bonus = salary * bonusCoeff
     bonus[0] = bonus[0] + signingBonus
 
-    return salary, bonus, stock, stockHeld
+    return salary, bonus, stockSold, stockHeld
 
-def calculateChartValues(salary, bonus, stock, accruedStock):
+def calculateChartValues(salary, bonus, stockSold):
     withoutStock = np.sum((salary, bonus), axis=0)
-    stockYearly = np.sum(stock, axis=0)
-    stockAccrued =  np.sum(accruedStock, axis=0)
-    TC = np.sum((withoutStock, stockYearly), axis=0)
+    TC = np.sum((withoutStock, stockSold), axis=0)
     addl = (((TC-currentTC) - retirementContrib) * taxationCoeff - ((targetRent-currentRent)+(targetOtherExpenses-currentOtherExpenses)))/12
 
-    return TC, addl, stockAccrued
+    return TC, addl
 
-salary, bonus, stock, accruedStock = calculateIncome()
+salary, bonus, stockSold, stockHeld = calculateIncome()
 
-TC, additionalIncome, stockAccrued = calculateChartValues(salary, bonus, stock, accruedStock)
+TC, additionalIncome = calculateChartValues(salary, bonus, stockSold)
 
 fig, axs = plt.subplots((3), sharex=True)
 axs[0].plot(TC*1000, ls='-', marker='o')
@@ -85,7 +88,7 @@ axs[1].minorticks_on()
 axs[1].grid(True, axis='x', which='major')
 axs[1].grid(True, axis='y', which='major')
 
-axs[2].plot(stockAccrued*1000, ls='-', color='orange', marker='o')
+axs[2].plot(stockHeld*1000, ls='-', color='orange', marker='o')
 axs[2].set_title("Accrued Stock")
 axs[2].yaxis.set_major_formatter(mpl.ticker.StrMethodFormatter('${x:,.0f}'))
 axs[2].set_xlabel("Years")
